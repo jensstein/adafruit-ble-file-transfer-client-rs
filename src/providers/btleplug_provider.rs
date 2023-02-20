@@ -33,6 +33,8 @@ async fn get_device_by_name(adapter: &Adapter, name: &str) -> Result<Option<Peri
     Ok(None)
 }
 
+/// The struct implementing the central [`Device`](crate::device::Device) trait.
+/// Available when the `btleplug-provider` feature is selected.
 pub struct BtleplugDevice {
     device: Peripheral,
     version_characteristic: BtleplugCharacteristic,
@@ -40,6 +42,7 @@ pub struct BtleplugDevice {
 }
 
 impl BtleplugDevice {
+    /// Subscribe to notifications and find characteristics from a device
     pub async fn new(device: Peripheral) -> Result<Self, Error> {
         device.discover_services().await?;
         let characteristics = device.characteristics();

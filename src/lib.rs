@@ -1,7 +1,40 @@
+//! Client-side implementation of the Adafruit BLE file transfer protocol
+//!
+//! Provides a client-side interface to interact with a device which exposes files with the
+//! Adafruit BLE file transfer protocol.
+//! The protocol is documented here: <https://github.com/adafruit/Adafruit_CircuitPython_BLE_File_Transfer#protocol>
+//!
+//! This library is designed to enable you to bring your own bluetooth handler by implementing the
+//! `adafruit_ble_fs_client::device::Device` trait. Or you can use the implementations in the
+//! `adafruit_ble_fs_client::providers` module.
+//!
+//! Example
+//! ```rust
+//! use adafruit_ble_fs_client::AdafruitFileTransferClient;
+//! use adafruit_ble_fs_client::providers::btleplug_provider::BtleplugDevice;
+//!
+//! #[tokio::main]
+//! async fn main() {
+//!     let client = AdafruitFileTransferClient::<BtleplugDevice>::new_from_device_name("device-name")
+//!         .await
+//!         .unwrap();
+//!     let version = client.get_version().await
+//!         .unwrap();
+//!     println!("Your client is running adafruit ble-fs version {version:?}");
+//!     let files = client.list_directory("/").await.expect("Unable to list directory /");
+//!     println!("Files in /: {files:?}");
+//! }
+//! ```
+
+#![warn(missing_docs)]
+#![deny(missing_docs)]
+#![deny(rustdoc::missing_doc_code_examples)]
+
 mod device;
 mod errors;
 mod response_types;
 
+/// Contains implementations of the [`Device`](crate::device::Device) trait for different bluetooth handlers
 pub mod providers;
 
 use std::time::SystemTime;
@@ -10,9 +43,8 @@ use crate::response_types::{Response, ListDirectoryResponse, ReadFileResponse,
     WriteFileResponse, DeleteFileResponse, MakeDirectoryResponse,
     MoveFileOrDirectoryResponse};
 use crate::errors::{Error, ResponseError};
-use crate::device::Device;
-
-// https://github.com/adafruit/Adafruit_CircuitPython_BLE_File_Transfer
+/// Abstraction for communication with a BLE device
+pub use crate::device::Device;
 
 enum StatusType {
     Success,
@@ -44,26 +76,31 @@ impl Into<String> for StatusType {
     }
 }
 
+/// The main implementation of the file transfer protocol
 pub struct AdafruitFileTransferClient<D> where D: Device {
     device: D,
 }
 
 impl<D> AdafruitFileTransferClient<D> where D: Device {
+    /// Get a client from a [`Device`](crate::device::Device)
     pub async fn new(device: D) -> Result<Self, Error> {
         Ok(Self {
             device,
         })
     }
 
+    /// Instantiate a client by looking the device up by name
     pub async fn new_from_device_name(name: &str) -> Result<Self, Error> {
         Self::new(D::get_device_by_name(name).await?).await
     }
 
+    /// Disconnect the client
     pub async fn disconnect(&self) -> Result<(), Error> {
         self.device.disconnect().await?;
         Ok(())
     }
 
+    /// Get the version of the Adafruit BLE file transfer which the device supports
     pub async fn get_version(&self) -> Result<Option<u32>, Error> {
         let result = self.device.read(self.device.get_version_characteristic()).await?;
         let get_result_str = || {
@@ -87,6 +124,7 @@ impl<D> AdafruitFileTransferClient<D> where D: Device {
         Ok(())
     }
 
+    /// Read the contents of a file
     pub async fn read_file(&self, filename: &str) -> Result<Vec<u8>, Error> {
         let path_len = u16::to_le_bytes(filename.len() as u16);
         let cmd = [0x10, 0x00];
@@ -111,6 +149,7 @@ impl<D> AdafruitFileTransferClient<D> where D: Device {
         Ok(file_contents)
     }
 
+    /// Write contents into a file
     pub async fn write_file<F>(&self, filename: &str, data: &[u8], callback: F) -> Result<(), Error> 
             where F: Fn(&WriteFileResponse) {
         let path_len = u16::to_le_bytes(filename.len() as u16);
@@ -142,6 +181,7 @@ impl<D> AdafruitFileTransferClient<D> where D: Device {
         Ok(())
     }
 
+    /// Delete a file or directory
     pub async fn delete_file_or_directory(&self, path: &str) -> Result<DeleteFileResponse, Error> {
         let cmd = [&[0x30, 0], u16::to_le_bytes(path.len() as u16).as_ref(),
             path.as_bytes()].concat();
@@ -150,6 +190,7 @@ impl<D> AdafruitFileTransferClient<D> where D: Device {
         Ok(result)
     }
 
+    /// Create a directory on the device
     pub async fn make_directory(&self, path: &str) -> Result<MakeDirectoryResponse, Error> {
         let current_time = get_current_time();
         let cmd = [&[0x40, 0], u16::to_le_bytes(path.len() as u16).as_ref(),
@@ -159,6 +200,7 @@ impl<D> AdafruitFileTransferClient<D> where D: Device {
         Ok(result)
     }
 
+    /// List the contents of the specified directory
     pub async fn list_directory(&self, directory: &str) -> Result<Vec<ListDirectoryResponse>, Error> {
         let path_len = u16::to_le_bytes(directory.len() as u16);
         let cmd = [0x50, 0x00];
@@ -180,6 +222,7 @@ impl<D> AdafruitFileTransferClient<D> where D: Device {
         Ok(responses)
     }
 
+    /// Move the specified file or directory to a new path
     pub async fn move_file_or_directory(&self, src: &str, dest: &str) -> Result<MoveFileOrDirectoryResponse, Error> {
         let cmd = [&[0x60, 0], u16::to_le_bytes(src.len() as u16).as_ref(),
             u16::to_le_bytes(dest.len() as u16).as_ref(), src.as_bytes(),
