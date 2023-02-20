@@ -1,25 +1,18 @@
+mod device;
 mod errors;
 mod response_types;
 
-use std::time::{Duration, SystemTime};
-use std::pin::Pin;
+pub mod providers;
 
-use futures::{Stream, stream::StreamExt};
-
-// Import traits as _ to avoid name clashes with the identically named structs
-use btleplug::api::{Manager as _, Central as _, Peripheral as _, ScanFilter,
-    WriteType, Characteristic, ValueNotification};
-use btleplug::platform::{Adapter, Manager, Peripheral};
+use std::time::SystemTime;
 
 use crate::response_types::{Response, ListDirectoryResponse, ReadFileResponse,
     WriteFileResponse, DeleteFileResponse, MakeDirectoryResponse,
     MoveFileOrDirectoryResponse};
 use crate::errors::{Error, ResponseError};
+use crate::device::Device;
 
-// https://github.com/deviceplug/btleplug/blob/master/examples/subscribe_notify_characteristic.rs
 // https://github.com/adafruit/Adafruit_CircuitPython_BLE_File_Transfer
-// https://github.com/adafruit/Adafruit_CircuitPython_BLE_File_Transfer/blob/main/examples/ble_file_transfer_simpletest.py
-// https://github.com/adafruit/Adafruit_CircuitPython_BLE_File_Transfer/blob/main/examples/ble_file_transfer_stub_server.py
 
 enum StatusType {
     Success,
@@ -51,58 +44,19 @@ impl Into<String> for StatusType {
     }
 }
 
-async fn get_device_by_name(adapter: &Adapter, name: &str) -> Result<Option<Peripheral>, Error> {
-    for p in adapter.peripherals().await? {
-        if let Some(props) = p.properties().await? {
-            if props.local_name == Some(name.into()) {
-                return Ok(Some(p));
-            }
-        }
-    }
-    Ok(None)
+pub struct AdafruitFileTransferClient<D> where D: Device {
+    device: D,
 }
 
-pub struct AdafruitFileTransferClient {
-    device: Peripheral,
-    version_characteristic: Characteristic,
-    raw_transfer_characteristic: Characteristic,
-}
-
-impl AdafruitFileTransferClient {
-    pub async fn new(device: Peripheral) -> Result<Self, Error> {
-        device.discover_services().await?;
-        let characteristics = device.characteristics();
-        let version_characteristic = characteristics
-            .iter()
-            .find(|c| c.uuid == uuid::uuid!("adaf0100-4669-6c65-5472-616e73666572"))
-            .ok_or_else(||Error::new("No characteristic found for adaf0100-4669-6c65-5472-616e73666572"))?
-            .to_owned();
-        let raw_transfer_characteristic = characteristics
-            .iter()
-            .find(|c| c.uuid == uuid::uuid!("adaf0200-4669-6c65-5472-616e73666572"))
-            .ok_or_else(||Error::new("No characteristic found for adaf0200-4669-6c65-5472-616e73666572"))?
-            .to_owned();
-        device.subscribe(&raw_transfer_characteristic).await?;
+impl<D> AdafruitFileTransferClient<D> where D: Device {
+    pub async fn new(device: D) -> Result<Self, Error> {
         Ok(Self {
             device,
-            version_characteristic,
-            raw_transfer_characteristic,
         })
     }
 
     pub async fn new_from_device_name(name: &str) -> Result<Self, Error> {
-        let manager = Manager::new().await?;
-        let adapter = manager.adapters()
-            .await?
-            .into_iter()
-            .next().ok_or_else(||Error::new("No bluetooth adapter available"))?;
-        adapter.start_scan(ScanFilter::default()).await?;
-        tokio::time::sleep(Duration::from_secs(2)).await;
-        let device = get_device_by_name(&adapter, name).await?
-            .ok_or_else(||Error::new(&format!("No device found with name {name}")))?;
-        device.connect().await?;
-        device.discover_services().await?;
-        Self::new(device).await
+        Self::new(D::get_device_by_name(name).await?).await
     }
 
     pub async fn disconnect(&self) -> Result<(), Error> {
@@ -111,7 +65,7 @@ impl AdafruitFileTransferClient {
     }
 
     pub async fn get_version(&self) -> Result<Option<u32>, Error> {
-        let result = self.device.read(&self.version_characteristic).await?;
+        let result = self.device.read(self.device.get_version_characteristic()).await?;
         let get_result_str = || {
             result.iter().map(|b| b.to_string()).collect::<Vec<String>>().join(",")
         };
@@ -129,7 +83,7 @@ impl AdafruitFileTransferClient {
     }
 
     async fn write(&self, cmd: &[u8]) -> Result<(), ResponseError> {
-        self.device.write(&self.raw_transfer_characteristic, cmd, WriteType::WithoutResponse).await?;
+        self.device.write(self.device.get_raw_transfer_characteristic(), cmd).await?;
         Ok(())
     }
 
@@ -213,9 +167,9 @@ impl AdafruitFileTransferClient {
         let mut responses = vec![];
         let r = self.get_response_from_notification::<ListDirectoryResponse>().await?;
         responses.push(r);
-        let mut stream = self.get_notification_stream(responses[0].total_entries as usize).await?;
-        while let Some(data) = stream.next().await {
-            let r2 = ListDirectoryResponse::from_bytes(&data.value)?;
+        let notifications = self.device.get_notifications(responses[0].total_entries as usize).await?;
+        for data in notifications.iter() {
+            let r2 = ListDirectoryResponse::from_bytes(data)?;
             check_status(&r2)?;
             responses.push(r2);
         }
@@ -235,21 +189,17 @@ impl AdafruitFileTransferClient {
         Ok(result)
     }
 
-    async fn get_notification_stream(&self, n: usize) ->
-            Result<futures::stream::Take<Pin<Box<dyn Stream<Item = ValueNotification> +
-            std::marker::Send>>>, Error> {
-        Ok(self.device.notifications()
-            .await?
-            .take(n))
-    }
-
-    async fn get_single_notification(&self) -> Result<ValueNotification, Error> {
-        self.get_notification_stream(1).await?.next().await.ok_or_else(||Error::new("No notification found"))
+    async fn get_single_notification(&self) -> Result<Vec<u8>, Error> {
+        let result = self.device.get_notifications(1).await?;
+        if result.is_empty() {
+            return Err(Error::new("No notification found"));
+        }
+        Ok(result[0].to_owned())
     }
 
     async fn get_response_from_notification<T>(&self) -> Result<T, Error> where T: Response {
         let result = self.get_single_notification().await?;
-        let result = T::from_bytes(&result.value)?;
+        let result = T::from_bytes(&result)?;
         check_status(&result)?;
         Ok(result)
     }

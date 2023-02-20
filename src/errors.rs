@@ -16,11 +16,6 @@ impl std::fmt::Display for Error {
     }
 }
 impl std::error::Error for Error {}
-impl From<btleplug::Error> for Error {
-    fn from(error: btleplug::Error) -> Self {
-        Self::new(&format!("Error during bluetooth communication: {error}"))
-    }
-}
 impl From<ResponseError> for Error {
     fn from(error: ResponseError) -> Self {
         Self::new(&format!("Error communicating with device: {error}"))
@@ -50,10 +45,5 @@ impl From<TryFromSliceError> for ResponseError {
 impl From<FromUtf8Error> for ResponseError {
     fn from(error: FromUtf8Error) -> Self {
         Self {message: format!("Unable to convert bytes into string: {error}")}
-    }
-}
-impl From<btleplug::Error> for ResponseError {
-    fn from(error: btleplug::Error) -> Self {
-        Self {message: format!("Error during bluetooth communication: {error}")}
     }
 }
