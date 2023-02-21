@@ -2,6 +2,10 @@
 name = "adafruit-ble-fs-client"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
+description = "A client-side implementation of the Adafruit BLE file transfer protocol"
+repository = "https://gitlab.com/jensstein/adafruit-ble-file-transfer-client-rs"
+readme = "README.md"
 
 [lib]
 path = "src/lib.rs"
