@@ -1,3 +1,4 @@
 *.swp
 /target
+examples/simple-example/target/
 Cargo.lock
