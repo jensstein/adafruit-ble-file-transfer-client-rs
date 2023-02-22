@@ -150,8 +150,8 @@ impl<D> AdafruitFileTransferClient<D> where D: Device {
     }
 
     /// Write contents into a file
-    pub async fn write_file<F>(&self, filename: &str, data: &[u8], callback: F) -> Result<(), Error> 
-            where F: Fn(&WriteFileResponse) {
+    pub async fn write_file<F>(&self, filename: &str, data: &[u8], mut callback: F) -> Result<(), Error>
+            where F: FnMut(&WriteFileResponse) {
         let path_len = u16::to_le_bytes(filename.len() as u16);
         let data_len = u32::to_le_bytes(data.len() as u32);
         let current_time = get_current_time();
