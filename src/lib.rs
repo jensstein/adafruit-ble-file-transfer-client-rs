@@ -150,7 +150,7 @@ impl<D> AdafruitFileTransferClient<D> where D: Device {
     }
 
     /// Write contents into a file
-    pub async fn write_file<F>(&self, filename: &str, data: &[u8], mut callback: F) -> Result<(), Error>
+    pub async fn write_file<F>(&self, filename: &str, data: &[u8], batch_size: usize, mut callback: F) -> Result<(), Error>
             where F: FnMut(&WriteFileResponse) {
         let path_len = u16::to_le_bytes(filename.len() as u16);
         let data_len = u32::to_le_bytes(data.len() as u32);
@@ -161,7 +161,6 @@ impl<D> AdafruitFileTransferClient<D> where D: Device {
         let r = self.get_response_from_notification::<WriteFileResponse>().await?;
         callback(&r);
         if r.status == 0x01 {
-            let batch_size = 32;
             for i in (0..data.len()).step_by(batch_size) {
                 let end = if (i + batch_size) >= data.len() {
                     data.len()
