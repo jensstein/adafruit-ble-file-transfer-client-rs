@@ -42,7 +42,7 @@ use std::time::SystemTime;
 use crate::response_types::{Response, ListDirectoryResponse, ReadFileResponse,
     WriteFileResponse, DeleteFileResponse, MakeDirectoryResponse,
     MoveFileOrDirectoryResponse};
-use crate::errors::{Error, ResponseError};
+pub use crate::errors::{Error, ResponseError};
 /// Abstraction for communication with a BLE device
 pub use crate::device::Device;
 

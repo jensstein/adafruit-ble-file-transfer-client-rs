@@ -2,10 +2,12 @@ use std::array::TryFromSliceError;
 use std::string::FromUtf8Error;
 
 #[derive(Debug, Clone)]
+/// The main error type.
 pub struct Error {
     message: String,
 }
 impl Error {
+    /// Creates a new error with a message.
     pub fn new(message: &str) -> Self {
         Self {message: message.into()}
     }
@@ -23,10 +25,12 @@ impl From<ResponseError> for Error {
 }
 
 #[derive(Debug, Clone)]
+/// The error type for failures indicated by the responses coming from the device.
 pub struct ResponseError {
     message: String,
 }
 impl ResponseError {
+    /// Creates a new error with a message.
     pub fn new(message: &str) -> Self {
         ResponseError {message: message.into()}
     }
