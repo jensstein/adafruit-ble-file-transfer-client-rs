@@ -46,7 +46,7 @@ pub struct ReadFileResponse {
 
 impl ReadFileResponse {
     fn _from_bytes(bytes: &[u8]) -> Result<Self, ResponseError> {
-        validate_header(bytes, 10, 0x11)?;
+        validate_header(bytes, 16, 0x11)?;
         let chunk_length = from_slice::<u32>(&bytes[12..16])?;
         let contents = bytes[16..].to_vec();
         Ok(Self {
