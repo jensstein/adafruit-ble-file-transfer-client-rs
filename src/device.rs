@@ -1,5 +1,7 @@
 use crate::errors::{Error, ResponseError};
 
+// The associated type on the trait requires mockall to have a concrete type specified
+#[cfg_attr(test, mockall::automock(type Characteristic=u8;))]
 #[async_trait::async_trait]
 /// Abstraction for communication with a BLE device
 pub trait Device {

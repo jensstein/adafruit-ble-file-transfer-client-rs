@@ -9,7 +9,7 @@
 //! `adafruit_ble_fs_client::providers` module.
 //!
 //! Example
-//! ```rust
+//! ```rust,ignore
 //! use adafruit_ble_fs_client::AdafruitFileTransferClient;
 //! use adafruit_ble_fs_client::providers::btleplug_provider::BtleplugDevice;
 //!
@@ -77,6 +77,7 @@ impl Into<String> for StatusType {
 }
 
 /// The main implementation of the file transfer protocol
+#[derive(Debug)]
 pub struct AdafruitFileTransferClient<D> where D: Device {
     device: D,
 }
@@ -266,5 +267,73 @@ fn get_current_time() -> [u8; 8] {
             log::warn!("Error getting current time: {error}. Returning 0 instead.");
             u64::to_le_bytes(0u64)
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::device::MockDevice;
+    use mockall::predicate::eq;
+    use rand::RngCore;
+
+    #[tokio::test]
+    async fn get_version() {
+        let mut mock_device = MockDevice::new();
+        mock_device.expect_get_version_characteristic()
+            .times(1)
+            .return_const(1);
+        mock_device.expect_read()
+            .with(eq(1))
+            .times(1)
+            .return_const(Ok(vec![4, 0, 0, 0]));
+        let client = AdafruitFileTransferClient::<MockDevice>::new(mock_device)
+            .await.expect("Unable to get client");
+        let version = client.get_version().await.expect("Unable to get version");
+        assert_eq!(Some(4), version);
+    }
+
+    #[tokio::test]
+    async fn read_file() {
+        // The file contents are just 1024 random bytes. The point is that reading the file will be
+        // cut into two 512 byte chunks.
+        let mut rng = rand::thread_rng();
+        let file_contents: &mut [u8; 1024] = &mut [0; 1024];
+        rng.fill_bytes(file_contents);
+        let mut mock_device = MockDevice::new();
+        // First chunk:
+        mock_device.expect_get_raw_transfer_characteristic()
+            .times(2)
+            .return_const(2);
+        // This command corresponds to sending the filename "Filename"
+        let cmd: &[u8] = &[0x10, 0, 8, 0, 0, 0, 0, 0, 0, 2, 0, 0, 70, 105, 108, 101, 110, 97, 109, 101];
+        mock_device.expect_write()
+            .with(eq(2), eq(cmd))
+            .times(1)
+            .return_const(Ok(()));
+        let response = [&[0x11, 1, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 2, 0, 0],
+            file_contents[0..512].as_ref()].concat();
+        mock_device.expect_get_notifications()
+            .with(eq(1))
+            .times(1)
+            .return_const(Ok(vec![response]));
+
+        // Second chunk:
+        let subcmd: &[u8] = &[0x12, 1, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0];
+        mock_device.expect_write()
+            .with(eq(2), eq(subcmd))
+            .times(1)
+            .return_const(Ok(()));
+        let second_response = [&[0x11, 1, 0, 0, 0, 2, 0, 0, 0, 4, 0, 0, 0, 2, 0, 0],
+            file_contents[512..1024].as_ref()].concat();
+        mock_device.expect_get_notifications()
+            .with(eq(1))
+            .times(1)
+            .return_const(Ok(vec![second_response]));
+
+        let client = AdafruitFileTransferClient::<MockDevice>::new(mock_device)
+            .await.expect("Unable to get client");
+        let contents = client.read_file("Filename").await.expect("Unable to read file");
+        assert_eq!(file_contents.to_vec(), contents);
     }
 }
