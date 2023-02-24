@@ -134,16 +134,14 @@ impl<D> AdafruitFileTransferClient<D> where D: Device {
         let response = self.get_response_from_notification::<ReadFileResponse>().await?;
         let mut file_contents = response.contents;
         if response.chunk_length < response.total_length {
-            let mut offset = 0;
-            let mut chunk_length = 0;
-            while (offset + chunk_length) < response.total_length {
+            let mut offset = response.chunk_length;
+            while offset < response.total_length {
                 let offset_bytes = u32::to_le_bytes(offset);
                 let subcmd = [&[0x12, 0x01, 0, 0], offset_bytes.as_ref(), &[0, 2, 0, 0]].concat();
                 self.write(&subcmd).await?;
                 let response2 = self.get_response_from_notification::<ReadFileResponse>().await?;
                 file_contents.extend_from_slice(&response2.contents);
-                offset = response2.offset;
-                chunk_length = response2.chunk_length;
+                offset = response2.offset + response2.chunk_length;
             }
         }
         Ok(file_contents)
