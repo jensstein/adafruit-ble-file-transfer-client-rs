@@ -258,6 +258,16 @@ fn check_status(result: &dyn Response) -> Result<(), Error> {
     }
 }
 
+// In order to test time-based functions a static time representation is compiled into the test
+// binary while the non-test library contains the real implementation.
+#[cfg(test)]
+fn get_current_time() -> [u8; 8] {
+    // The date 2023-02-27T17:45:47.594936 represented as nanoseconds since epoch.
+    // python: `[b for b in struct.pack("<Q", 1677516347594936253)]`
+    [189, 143, 78, 243, 58, 188, 71, 23]
+}
+
+#[cfg(not(test))]
 fn get_current_time() -> [u8; 8] {
     // https://stackoverflow.com/a/70337205
     match SystemTime::now().duration_since(
@@ -335,5 +345,70 @@ mod test {
             .await.expect("Unable to get client");
         let contents = client.read_file("Filename").await.expect("Unable to read file");
         assert_eq!(file_contents.to_vec(), contents);
+    }
+
+    #[tokio::test]
+    async fn write_file() {
+        // This command corresponds to sending the filename "Filename"
+        let cmd: &[u8] = &[
+            0x20, // command
+            0, // padding
+            8, 0, // path length
+            0, 0, 0, 0, // offset
+            189, 143, 78, 243, 58, 188, 71, 23, // current time in nanoseconds - in the tests the time is always the same.
+            0, 2, 0, 0, // total size
+            70, 105, 108, 101, 110, 97, 109, 101 // path: "Filename"
+        ];
+
+        let batch_size = 32;
+        let mut rng = rand::thread_rng();
+        let file_contents: &mut [u8; 512] = &mut [0; 512];
+        rng.fill_bytes(file_contents);
+        let mut mock_device = MockDevice::new();
+        mock_device.expect_write()
+            .with(eq(2), eq(cmd))
+            .times(1)
+            .return_const(Ok(()));
+        mock_device.expect_get_raw_transfer_characteristic()
+            .times(17)
+            .return_const(2);
+        let response = vec![0x21, 0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0];
+        mock_device.expect_get_notifications()
+            .with(eq(1))
+            .times(1)
+            .return_const(Ok(vec![response]));
+
+        // 512 / 32 = 16
+        for i in 0..16 {
+            let offset = u32::to_le_bytes((i*batch_size) as u32);
+            let buf = &file_contents[(i*32)..((i+1)*32)];
+            let subcmd = [&[0x22, 0x01, 0, 0],
+                offset.as_ref(), &[32, 0, 0, 0], buf].concat();
+            mock_device.expect_write()
+                /*
+                 * This is a kind-of hack to make the shared reference passed
+                 * to `eq` live long enough. It needs to be 'static. Leaking the
+                 * Vec returns a &mut [u8] that lives for the remainder of the
+                 * program's life. Since I need a shared reference, dereferencing
+                 * and then rereferencing again, &*, turns the exclusive reference
+                 * into a shared reference.
+                 * https://practice.rs/lifetime/static.html
+                 */
+                .with(eq(2), eq(&*subcmd.leak()))
+                .times(1)
+                .return_const(Ok(()));
+            let free_space = u32::to_le_bytes(((16-i) * batch_size) as u32);
+            let response = [&[0x21, 0x01, 0, 0], offset.as_ref(),
+                &[0, 0, 0, 0, 0, 0, 0, 0], free_space.as_ref()].concat();
+            mock_device.expect_get_notifications()
+                .with(eq(1))
+                .times(1)
+                .return_const(Ok(vec![response]));
+        }
+
+        let client = AdafruitFileTransferClient::<MockDevice>::new(mock_device)
+            .await.expect("Unable to get client");
+        client.write_file("Filename", file_contents, batch_size,
+            |_|{}).await.expect("Unable to write file");
     }
 }
