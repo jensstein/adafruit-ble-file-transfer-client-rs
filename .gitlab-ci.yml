@@ -1,0 +1,32 @@
+stages:
+  - lint
+  - test
+  - test:nightly
+
+include:
+- template: Security/SAST.gitlab-ci.yml
+
+.install_clippy: &install_clippy |
+  rustup component add clippy
+
+lint:
+  image: rust:latest
+  stage: lint
+  script:
+    - *install_clippy
+    - cargo clippy
+
+test:
+  image: rust:latest
+  stage: test
+  script:
+    - cargo test
+
+test:nightly:
+  image: rustlang/rust:nightly
+  stage: test:nightly
+  script:
+    - *install_clippy
+    - cargo clippy
+    - cargo test
+  allow_failure: true
