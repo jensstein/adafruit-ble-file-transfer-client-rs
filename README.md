@@ -1,5 +1,11 @@
 # Adafruit BLE file transfer client library
 
+[![crates.io](https://img.shields.io/crates/v/adafruit-ble-fs-client.svg)](https://crates.io/crates/adafruit-ble-fs-client)
+[![Released API docs](https://docs.rs/adafruit-ble-fs-client/badge.svg)](https://docs.rs/adafruit_ble_fs_client)
+[![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE.txt)
+[![CI](https://gitlab.com/jensstein/adafruit-ble-file-transfer-client-rs/badges/main/pipeline.svg)](https://gitlab.com/jensstein/adafruit-ble-file-transfer-client-rs/-/pipelines?page=1&scope=branches&ref=main)
+![coverage](https://gitlab.com/jensstein/adafruit-ble-file-transfer-client-rs/badges/main/coverage.svg?job=test)
+
 Client-side implementation of the Adafruit BLE file transfer protocol
 
 Provides a client-side interface to interact with a device which exposes files with the
