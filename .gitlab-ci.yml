@@ -16,11 +16,37 @@ lint:
     - *install_clippy
     - cargo clippy
 
+# Coverage reporting based on
+# https://www.collabora.com/news-and-blog/blog/2021/03/24/rust-integrating-llvm-source-base-code-coverage-with-gitlab/
+# https://doc.rust-lang.org/rustc/instrument-coverage.html#enable-coverage-profiling-in-the-rust-compiler
 test:
   image: rust:latest
   stage: test
+  variables:
+    RUSTFLAGS: "-C instrument-coverage"
+    LLVM_PROFILE_FILE: "coverage-%p-%m.profraw"
   script:
+    - apt-get update
+    - apt-get install -y python3-pip lcov
     - cargo test
+    - rustup component add llvm-tools-preview
+    - cargo install grcov
+    - grcov . --binary-path ./target/debug/ -s . -t html --branch --ignore-not-existing --ignore "*cargo*" -o ./coverage/
+    - pip3 install lcov_cobertura
+    - grcov . --binary-path ./target/debug/ -s . -t lcov --branch --ignore-not-existing --ignore "*cargo*" -o coverage.lcov
+    - lcov_cobertura coverage.lcov
+    - lcov --summary coverage.lcov
+  # The "Test coverage parsing" setting has been moved to .gitlab-ci: https://about.gitlab.com/blog/2022/04/18/gitlab-releases-15-breaking-changes/
+  # Also, the regex pattern must have a starting and ending /: https://gitlab.com/gitlab-org/gitlab/-/issues/369092
+  coverage: "/\\s*lines\\.*:\\s*([\\d\\.]+%)/"
+  artifacts:
+    paths:
+      - "coverage"
+    reports:
+      # https://docs.gitlab.com/ee/ci/yaml/artifacts_reports.html#artifactsreportscoverage_report
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
 
 test:nightly:
   image: rustlang/rust:nightly
