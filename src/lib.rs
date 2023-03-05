@@ -411,4 +411,386 @@ mod test {
         client.write_file("Filename", file_contents, batch_size,
             |_|{}).await.expect("Unable to write file");
     }
+
+    #[tokio::test]
+    async fn delete_file_or_directory() {
+        let mut mock_device = MockDevice::new();
+        let cmd: &[u8] = &[0x30, // Command
+            0, // Padding
+            9, 0, // Path length
+            47, 70, 105, 108, 101, 110, 97, 109, 101 // Bytes for /Filename
+        ];
+        mock_device.expect_write()
+            .with(eq(2), eq(cmd))
+            .times(1)
+            .return_const(Ok(()));
+        mock_device.expect_get_raw_transfer_characteristic()
+            .times(1)
+            .return_const(2);
+        let response = vec![0x31, 0x01];
+        mock_device.expect_get_notifications()
+            .with(eq(1))
+            .times(1)
+            .return_const(Ok(vec![response]));
+        let client = AdafruitFileTransferClient::<MockDevice>::new(mock_device)
+            .await.expect("Unable to get client");
+        client.delete_file_or_directory("/Filename").await.expect("Unable to delete file");
+    }
+
+    #[tokio::test]
+    async fn delete_file_or_directory_read_only() {
+        let mut mock_device = MockDevice::new();
+        let cmd: &[u8] = &[0x30, // Command
+            0, // Padding
+            9, 0, // Path length
+            47, 70, 105, 108, 101, 110, 97, 109, 101 // Bytes for /Filename
+        ];
+        mock_device.expect_write()
+            .with(eq(2), eq(cmd))
+            .times(1)
+            .return_const(Ok(()));
+        mock_device.expect_get_raw_transfer_characteristic()
+            .times(1)
+            .return_const(2);
+        let response = vec![0x31, 0x05];
+        mock_device.expect_get_notifications()
+            .with(eq(1))
+            .times(1)
+            .return_const(Ok(vec![response]));
+        let client = AdafruitFileTransferClient::<MockDevice>::new(mock_device)
+            .await.expect("Unable to get client");
+        let result = client.delete_file_or_directory("/Filename").await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Read-only"));
+    }
+
+    #[tokio::test]
+    async fn delete_file_or_directory_non_existent() {
+        let mut mock_device = MockDevice::new();
+        let cmd: &[u8] = &[0x30, // Command
+            0, // Padding
+            9, 0, // Path length
+            47, 70, 105, 108, 101, 110, 97, 109, 101 // Bytes for /Filename
+        ];
+        mock_device.expect_write()
+            .with(eq(2), eq(cmd))
+            .times(1)
+            .return_const(Ok(()));
+        mock_device.expect_get_raw_transfer_characteristic()
+            .times(1)
+            .return_const(2);
+        let response = vec![0x31, 0x02];
+        mock_device.expect_get_notifications()
+            .with(eq(1))
+            .times(1)
+            .return_const(Ok(vec![response]));
+        let client = AdafruitFileTransferClient::<MockDevice>::new(mock_device)
+            .await.expect("Unable to get client");
+        let result = client.delete_file_or_directory("/Filename").await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Missing file"));
+    }
+
+    #[tokio::test]
+    async fn make_directory() {
+        let cmd: &[u8] = &[
+            0x40, // Command
+            0, // Padding
+            10, 0, // Path length 
+            0, 0, 0, 0, // Padding
+            189, 143, 78, 243, 58, 188, 71, 23, // Fixed time used in tests
+            47, 100, 105, 114, 101, 99, 116, 111, 114, 121, // Bytes for /directory
+        ];
+        let mut mock_device = MockDevice::new();
+        mock_device.expect_write()
+            .with(eq(2), eq(cmd))
+            .times(1)
+            .return_const(Ok(()));
+        mock_device.expect_get_raw_transfer_characteristic()
+            .times(1)
+            .return_const(2);
+        let response = vec![
+            0x41, // Command
+            0x01, // Status
+            0, 0, 0, 0, 0, 0, // Padding
+            189, 143, 78, 243, 58, 188, 71, 23, // Time
+        ];
+        mock_device.expect_get_notifications()
+            .with(eq(1))
+            .times(1)
+            .return_const(Ok(vec![response]));
+        let client = AdafruitFileTransferClient::<MockDevice>::new(mock_device)
+            .await.expect("Unable to get client");
+        client.make_directory("/directory").await.expect("Unable to make directory");
+    }
+
+    #[tokio::test]
+    async fn make_directory_read_only() {
+        let cmd: &[u8] = &[
+            0x40, // Command
+            0, // Padding
+            10, 0, // Path length 
+            0, 0, 0, 0, // Padding
+            189, 143, 78, 243, 58, 188, 71, 23, // Fixed time used in tests
+            47, 100, 105, 114, 101, 99, 116, 111, 114, 121, // Bytes for /directory
+        ];
+        let mut mock_device = MockDevice::new();
+        mock_device.expect_write()
+            .with(eq(2), eq(cmd))
+            .times(1)
+            .return_const(Ok(()));
+        mock_device.expect_get_raw_transfer_characteristic()
+            .times(1)
+            .return_const(2);
+        let response = vec![
+            0x41, // Command
+            0x05, // Status
+            0, 0, 0, 0, 0, 0, // Padding
+            189, 143, 78, 243, 58, 188, 71, 23, // Time
+        ];
+        mock_device.expect_get_notifications()
+            .with(eq(1))
+            .times(1)
+            .return_const(Ok(vec![response]));
+        let client = AdafruitFileTransferClient::<MockDevice>::new(mock_device)
+            .await.expect("Unable to get client");
+        let result = client.make_directory("/directory").await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Read-only"));
+    }
+
+    #[tokio::test]
+    async fn make_directory_non_existent() {
+        let cmd: &[u8] = &[
+            0x40, // Command
+            0, // Padding
+            10, 0, // Path length 
+            0, 0, 0, 0, // Padding
+            189, 143, 78, 243, 58, 188, 71, 23, // Fixed time used in tests
+            47, 100, 105, 114, 101, 99, 116, 111, 114, 121, // Bytes for /directory
+        ];
+        let mut mock_device = MockDevice::new();
+        mock_device.expect_write()
+            .with(eq(2), eq(cmd))
+            .times(1)
+            .return_const(Ok(()));
+        mock_device.expect_get_raw_transfer_characteristic()
+            .times(1)
+            .return_const(2);
+        let response = vec![
+            0x41, // Command
+            0x02, // Status
+            0, 0, 0, 0, 0, 0, // Padding
+            189, 143, 78, 243, 58, 188, 71, 23, // Time
+        ];
+        mock_device.expect_get_notifications()
+            .with(eq(1))
+            .times(1)
+            .return_const(Ok(vec![response]));
+        let client = AdafruitFileTransferClient::<MockDevice>::new(mock_device)
+            .await.expect("Unable to get client");
+        let result = client.make_directory("/directory").await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Missing file"));
+    }
+
+    #[tokio::test]
+    async fn list_directory() {
+        let cmd: &[u8] = &[
+            0x50, // Command
+            0x00, // Padding
+            10, 0, // Path length
+            47, 100, 105, 114, 101, 99, 116, 111, 114, 121, // Bytes for /directory
+        ];
+        let mut mock_device = MockDevice::new();
+        mock_device.expect_write()
+            .with(eq(2), eq(cmd))
+            .times(1)
+            .return_const(Ok(()));
+        mock_device.expect_get_raw_transfer_characteristic()
+            .times(1)
+            .return_const(2);
+        let directory_contents = vec![".", "..", "file1", "file2"];
+        let response = [&[
+                0x51, // Command
+                0x01, // Status
+                0, 0,
+                0, 0, 0, 0,
+            ],
+            u32::to_le_bytes(directory_contents.len() as u32).as_ref(),
+            &[0, 0, 0, 0], // Flags
+            &[189, 143, 78, 243, 58, 188, 71, 23],
+            &[0, 0, 0, 0], // File size,
+        ].concat();
+        mock_device.expect_get_notifications()
+            .with(eq(1))
+            .times(1)
+            .return_const(Ok(vec![response]));
+        let mut responses = vec![];
+        for (i, c) in directory_contents.iter().enumerate() {
+            let response = [&[
+                    0x51, // Command
+                    0x01, // Status
+                ],
+                u16::to_le_bytes(c.len() as u16).as_ref(),
+                u32::to_le_bytes((i + 1) as u32).as_ref(),
+                u32::to_le_bytes(directory_contents.len() as u32).as_ref(),
+                &[0, 0, 0, 0], // Flags
+                &[189, 143, 78, 243, 58, 188, 71, 23],
+                u32::to_le_bytes(512u32).as_ref(), // File size,
+                c.as_bytes()
+            ].concat();
+            responses.push(response);
+        }
+        mock_device.expect_get_notifications()
+            .with(eq(4))
+            .times(1)
+            .return_const(Ok(responses));
+        let client = AdafruitFileTransferClient::<MockDevice>::new(mock_device)
+            .await.expect("Unable to get client");
+        let result = client.list_directory("/directory").await.expect("Unable to list directory");
+        assert_eq!(result.len(), 5);
+        assert_eq!(result[0].path, None);
+        assert_eq!(result[1].path, Some(".".into()));
+        assert_eq!(result[2].path, Some("..".into()));
+        assert_eq!(result[3].path, Some("file1".into()));
+        assert_eq!(result[4].path, Some("file2".into()));
+    }
+
+    #[tokio::test]
+    async fn list_directory_non_existent() {
+        let cmd: &[u8] = &[
+            0x50, // Command
+            0x00, // Padding
+            10, 0, // Path length
+            47, 100, 105, 114, 101, 99, 116, 111, 114, 121, // Bytes for /directory
+        ];
+        let mut mock_device = MockDevice::new();
+        mock_device.expect_write()
+            .with(eq(2), eq(cmd))
+            .times(1)
+            .return_const(Ok(()));
+        mock_device.expect_get_raw_transfer_characteristic()
+            .times(1)
+            .return_const(2);
+        let response = vec![
+                0x51, // Command
+                0x02, // Status
+                0, 0,
+                0, 0, 0, 0,
+                0, 0, 0, 0,
+                0, 0, 0, 0,
+                189, 143, 78, 243, 58, 188, 71, 23,
+                0, 0, 0, 0, // File size
+        ];
+        mock_device.expect_get_notifications()
+            .with(eq(1))
+            .times(1)
+            .return_const(Ok(vec![response]));
+        let client = AdafruitFileTransferClient::<MockDevice>::new(mock_device)
+            .await.expect("Unable to get client");
+        let result = client.list_directory("/directory").await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Missing file"))
+    }
+
+    #[tokio::test]
+    async fn move_file_or_directory() {
+        let cmd: &[u8] = &[
+            0x60, // Command
+            0, // Padding
+            4, 0, // Source lenght
+            5, 0, // Destination lenght
+            47, 115, 114, 99, // Bytes for /src
+            0, // Padding
+            47, 100, 101, 115, 116 // Bytes for /dest
+        ];
+        let mut mock_device = MockDevice::new();
+        mock_device.expect_write()
+            .with(eq(2), eq(cmd))
+            .times(1)
+            .return_const(Ok(()));
+        mock_device.expect_get_raw_transfer_characteristic()
+            .times(1)
+            .return_const(2);
+        let response = vec![
+                0x61, // Command
+                0x01, // Status
+        ];
+        mock_device.expect_get_notifications()
+            .with(eq(1))
+            .times(1)
+            .return_const(Ok(vec![response]));
+        let client = AdafruitFileTransferClient::<MockDevice>::new(mock_device)
+            .await.expect("Unable to get client");
+        client.move_file_or_directory("/src", "/dest").await.expect("Unable to move file");
+    }
+
+    #[tokio::test]
+    async fn move_file_or_directory_read_only() {
+        let cmd: &[u8] = &[
+            0x60, // Command
+            0, // Padding
+            4, 0, // Source lenght
+            5, 0, // Destination lenght
+            47, 115, 114, 99, // Bytes for /src
+            0, // Padding
+            47, 100, 101, 115, 116 // Bytes for /dest
+        ];
+        let mut mock_device = MockDevice::new();
+        mock_device.expect_write()
+            .with(eq(2), eq(cmd))
+            .times(1)
+            .return_const(Ok(()));
+        mock_device.expect_get_raw_transfer_characteristic()
+            .times(1)
+            .return_const(2);
+        let response = vec![
+                0x61, // Command
+                0x05, // Status
+        ];
+        mock_device.expect_get_notifications()
+            .with(eq(1))
+            .times(1)
+            .return_const(Ok(vec![response]));
+        let client = AdafruitFileTransferClient::<MockDevice>::new(mock_device)
+            .await.expect("Unable to get client");
+        let result = client.move_file_or_directory("/src", "/dest").await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Read-only"));
+    }
+
+    #[tokio::test]
+    async fn move_file_or_directory_other_error() {
+        let cmd: &[u8] = &[
+            0x60, // Command
+            0, // Padding
+            4, 0, // Source lenght
+            5, 0, // Destination lenght
+            47, 115, 114, 99, // Bytes for /src
+            0, // Padding
+            47, 100, 101, 115, 116 // Bytes for /dest
+        ];
+        let mut mock_device = MockDevice::new();
+        mock_device.expect_write()
+            .with(eq(2), eq(cmd))
+            .times(1)
+            .return_const(Ok(()));
+        mock_device.expect_get_raw_transfer_characteristic()
+            .times(1)
+            .return_const(2);
+        let response = vec![
+                0x61, // Command
+                0x02, // Status - this is the only place in the protocol where 0x02 means "other error" and not that the file is non-existent
+        ];
+        mock_device.expect_get_notifications()
+            .with(eq(1))
+            .times(1)
+            .return_const(Ok(vec![response]));
+        let client = AdafruitFileTransferClient::<MockDevice>::new(mock_device)
+            .await.expect("Unable to get client");
+        let result = client.move_file_or_directory("/src", "/dest").await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Missing file"));
+    }
 }
